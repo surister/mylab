@@ -1,14 +1,15 @@
 import json
+import pathlib
 import time
 
 import psutil
 
-t00 = time.time()
+zero_time = time.time()
 running = True
 
 import subprocess
 
-file = '/home/surister/PycharmProjects/lab/mytlab/code/load_parquet_blog/load_parquet1.py'
+file = '/home/surister/PycharmProjects/lab/mytlab/code/load_parquet_blog/load_parquet4.py'
 exec_path = '/home/surister/.cache/pypoetry/virtualenvs/mytlab-3ZSRO7bn-py3.12/bin/python' + ' ' + file
 
 print(f'Running: {exec_path}')
@@ -128,6 +129,8 @@ except (KeyboardInterrupt, psutil.AccessDenied, psutil.NoSuchProcess):
     pass
 
 finally:
+    delta_time = time.time()
+    execution_time = delta_time - zero_time # How long it took to execute in seconds.
     print(f"Gathered {len(stats_tracker.time)} metrics")
 
     rows = 2_964_624
@@ -135,22 +138,22 @@ finally:
     print("\n")
     print(
         f'''
-::Editor{{lang="python" header_text="load_parquet1.py" show_header=true}}
+::Editor{{lang="python" header_text="{pathlib.Path(file).name}" show_header=true}}
 <pre>{executed_file}</pre>
 ::        
 
 Results
 '''
     )
-    print(f'* Time: [{time.time() - t00:.2f}s]{{.h}}')
+    print(f'* Time: [{execution_time:.2f}s ({f'{round(execution_time / 60, 2)} minutes' if execution_time > 60 else ''})]{{.h}}')
     print(
-        f'* Avg upload speed: [{round(avg(stats_tracker.upload_mbs), 2)}Mb/s]{{.h}} - [max({max(stats_tracker.upload_mbs)})]{{.h}}')
+        f'* Avg upload speed: [{round(avg(stats_tracker.upload_mbs), 2)}MiB/s]{{.h}} - [max({max(stats_tracker.upload_mbs)})]{{.h}}')
     print(
-        f'* Avg memory usage: [{round(avg(stats_tracker.mem_mb), 2)}Gb]{{.h}} - [max({max(stats_tracker.mem_mb)})]{{.h}}')
+        f'* Avg memory usage: [{round(avg(stats_tracker.mem_mb), 2)}GiB]{{.h}} - [max({max(stats_tracker.mem_mb)})]{{.h}}')
     print(
         f'* Avg cpu usage: [{round(avg(stats_tracker.cpu_usage_percentage), 2)}%]{{.h}} - [max({max(stats_tracker.cpu_usage_percentage)})]{{.h}}')
     print(
-        f'* Avg throughput: {rows} rows / {time.time() - t00:.2f} = [{round(rows / (time.time() - t00), 2)}rows/s]{{.h}}')
+        f'* Avg throughput: {rows} rows / {time.time() - zero_time:.2f} = [{round(rows / (time.time() - zero_time), 2)}rows/s]{{.h}}')
     print(f'''
 ::line{{.pt-5}}
 ---
