@@ -4,11 +4,9 @@ CrateDB stores data in a row and column store, on top of that, it automatically 
 the index will be leveraged, and depending on the query, it will use the most efficient store.
 
 This is one of the many features that makes CrateDB very fast when reading
-and joining data, but it has an impact on storage.
+and aggregating data, but it has an impact on storage.
 
-For example, this json: with this table definition:
-
-[Yellow taxi trip - January 2024](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page) 2_964_624 rows
+We are going to use [Yellow taxi trip - January 2024](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page) which has 2_964_624 rows
 
 |VendorID|tpep_pickup_datetime|tpep_dropoff_datetime|passenger_count|trip_distance|RatecodeID|store_and_fwd_flag|PULocationID|DOLocationID|payment_type|fare_amount|extra|mta_tax|tip_amount|tolls_amount|improvement_surcharge|total_amount|congestion_surcharge|Airport_fee|
  |-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-| 
@@ -24,13 +22,86 @@ will take:
 - 342MB in CSV
 - 1.2GB in json
 - 510MB in PostgreSQL 16.1 (Debian 16.1-1.pgdg120+1)
+- 775MB in CrateDB 5.9.3 (3 nodes, default values)
+
+At first sight, it might look that CrateDB storage takes more than PostgreSQL, but we are comparing oranges to apples.
+
 
 ## Table of contents
-1. [Reducing storage](#reducing-storage)
-2. [Disable indexing](#disable-indexing)
-3. [Disable columnar store](#disable-the-columnar-store)
-4. [Changing the compression algorithm](#changing-the-compression-algorithm)
-5. [Data normalization](#data-normalization)
+1. [How storage works](#Storage in CrateDB)
+2. [Reducing storage](#reducing-storage)
+3. [Disable indexing](#disable-indexing)
+4. [Disable columnar store](#disable-the-columnar-store)
+5. [Changing the compression algorithm](#changing-the-compression-algorithm)
+6. [Data normalization](#data-normalization)
+
+## How storage in CrateDB works.
+
+It is very important to know how storage works in CrateDB.
+
+CrateDB is a distributed database; nodes, shards, partitions and replicas are tightly integrated.
+
+When a table is created data is sharded and distributed among nodes, this means that the memory footprint depends on 
+our replication and sharding strategy.
+
+Let's break down how the `775MB` was calculated, for `PostgreSQL` it was straightforward:
+```sql
+SELECT pg_size_pretty( pg_total_relation_size('taxi_january') );
+```
+
+When a table is created with default values, default values for shards and replicas are used.
+
+Issuing `create table my_table (my_column TEXT)` will create `max(4, num_data_nodes * 2)` shards.
+
+For example, a typical 3-node cluster, it will create:
+
+`max(4, 3 * 2)`
+
+`max(4, 6)`
+
+`6` shards
+
+On top of that, the default is the range `0-1`, so we will have maximum one replica, a replica multiplies the number of shards, so we will have
+`6 primary shards` and `6 replica shards`, physically distributed among the three nodes.
+
+![shards.png](shards.png)
+
+The total storage being used, can be calculated as the `avg size of 1 shard` * `total_shards`, in other words.
+
+
+To check this, on the current `taxi` table that was created:
+
+```sql
+SELECT
+  sum(size / 1_000_000) / count(*) as avg_mb_per_shard,
+  sum(size) / 1_000_000 as total_mb
+FROM
+  sys.shards
+WHERE
+  table_name = 'taxi'
+```
+
+
+|avg_mb_per_shard|total_mb|
+ |-|-| 
+|64|775|
+
+Lets check the real disk usage, by querying `select path from sys.shards` the path where the data is stored on disk can be found.
+
+```shell
+sh-5.1# pwd
+/data/data/nodes/0/indices/LeFVb9VMT_G68tZs0vOuyA
+sh-5.1# du -sh ./* | sort -h
+8.0K	./_state
+63M	./2
+63M	./3
+63M	./4
+63M	./5
+```
+
+As you can see, `~64M` that was gotten from querying `sys.shards`
+
+The techniques that we are going to apply will reduce the disk usage of the `avg size of 1 shard`
 
 ## Reducing storage
 
@@ -89,14 +160,12 @@ DROP TABLE "taxi_deleteme"
 
 ### Effects on storage
 
-Data was reduced: x% `255.9 MB` 
+|avg_mb_per_shard|total_mb|
+ |-|-| 
+|36|445|
 
-### Effects on performance
 
-```query1```
-```query2```
-```query3```
-```query4```
+Data was reduced `~18%` 
 
 ## Disable the columnar store.
 
